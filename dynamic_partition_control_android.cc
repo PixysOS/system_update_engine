@@ -780,6 +780,7 @@ bool DynamicPartitionControlAndroid::UpdatePartitionMetadata(
     MetadataBuilder* builder,
     uint32_t target_slot,
     const DeltaArchiveManifest& manifest) {
+#ifndef TARGET_USES_PREBUILT_DYNAMIC_PARTITIONS
   // If applying downgrade from Virtual A/B to non-Virtual A/B, the left-over
   // COW group needs to be deleted to ensure there are enough space to create
   // target partitions.
@@ -787,6 +788,7 @@ bool DynamicPartitionControlAndroid::UpdatePartitionMetadata(
 
   const std::string target_suffix = SlotSuffixForSlotNumber(target_slot);
   DeleteGroupsWithSuffix(builder, target_suffix);
+#endif
 
   uint64_t total_size = 0;
   for (const auto& group : manifest.dynamic_partition_metadata().groups()) {
@@ -814,6 +816,7 @@ bool DynamicPartitionControlAndroid::UpdatePartitionMetadata(
                             partition.new_partition_info().size());
   }
 
+#ifndef TARGET_USES_PREBUILT_DYNAMIC_PARTITIONS
   for (const auto& group : manifest.dynamic_partition_metadata().groups()) {
     auto group_name_suffix = group.name() + target_suffix;
     if (!builder->AddGroup(group_name_suffix, group.size())) {
@@ -853,7 +856,25 @@ bool DynamicPartitionControlAndroid::UpdatePartitionMetadata(
                 << group_name_suffix << " with size " << partition_size;
     }
   }
-
+#else
+  for (const auto& group : partition_metadata.groups) {
+    for (const auto& partition : group.partitions) {
+      auto partition_name_suffix = partition.name + target_suffix;
+      Partition* p = builder->FindPartition(partition_name_suffix);
+      if (!p) {
+        LOG(ERROR) << "Cannot find partition " << partition_name_suffix;
+        return false;
+      }
+      if (!builder->ResizePartition(p, partition.size)) {
+        LOG(ERROR) << "Cannot resize partition " << partition_name_suffix
+                   << " to size " << partition.size << ". Not enough space?";
+        return false;
+      }
+      LOG(INFO) << "Updated partition " << partition_name_suffix
+                << " with size " << partition.size;
+    }
+  }
+#endif
   return true;
 }
 
